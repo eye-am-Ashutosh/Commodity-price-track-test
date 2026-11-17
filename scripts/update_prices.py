@@ -4,7 +4,9 @@
 Run every weekday at 10:30 IST by .github/workflows/update-prices.yml (ESS Pricing Tracker).
 
 Sources (both free, no key needed):
-  - Copper, WTI, Brent: Yahoo Finance front-month futures (COMEX HG=F, NYMEX CL=F, ICE BZ=F)
+  - Copper, WTI, Brent: Yahoo Finance front-month futures (COMEX HG=F, NYMEX CL=F, ICE BZ=F);
+    if Yahoo refuses the request (it often rate-limits GitHub's servers), Sina Finance's
+    continuous contracts for the same futures (HG, CL, OIL) are used instead
   - Lithium carbonate:  Sina Finance, GFEX lithium carbonate main contract (LC0), CNY / tonne
     (the same contract Trading Economics quotes as LC:COM)
 
@@ -27,6 +29,8 @@ DATA = Path(__file__).resolve().parent.parent / "data.json"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
 
 YAHOO = {"copper": "HG=F", "wti": "CL=F", "brent": "BZ=F"}
+# Sina symbol and the factor that turns its quote into the dashboard's unit
+SINA_GLOBAL = {"copper": ("HG", 0.01), "wti": ("CL", 1), "brent": ("OIL", 1)}  # COMEX copper is quoted in US cents / lb
 SINA = {"lithium": "LC0"}
 
 
@@ -47,8 +51,16 @@ def get(url, referer=None, tries=3):
 
 def yahoo(symbol):
     """Daily closes for the last ~13 months as [(date, close)], oldest first."""
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=13mo&interval=1d"
-    res = json.loads(get(url))["chart"]["result"][0]
+    err = None
+    for host in ("query1", "query2"):
+        try:
+            text = get(f"https://{host}.finance.yahoo.com/v8/finance/chart/{symbol}?range=13mo&interval=1d", tries=2)
+            break
+        except Exception as e:  # noqa: BLE001
+            err = e
+    else:
+        raise err
+    res = json.loads(text)["chart"]["result"][0]
     tz = dt.timezone(dt.timedelta(seconds=res["meta"].get("gmtoffset", 0)))
     closes = res["indicators"]["quote"][0]["close"]
     bars = [(t, c) for t, c in zip(res["timestamp"], closes) if c is not None]
@@ -71,6 +83,14 @@ def sina(symbol):
     text = get(url, referer="https://finance.sina.com.cn/")
     rows = json.loads(re.search(r"\((\[.*\])\)", text, re.S).group(1))
     return [(dt.date.fromisoformat(r["d"]), float(r["c"])) for r in rows]
+
+
+def sina_global(symbol, factor):
+    """Daily closes for an overseas futures contract from Sina Finance as [(date, close)], oldest first."""
+    url = f"https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20t=/GlobalFuturesService.getGlobalFuturesDailyKLine?symbol={symbol}&source=web"
+    text = get(url, referer="https://finance.sina.com.cn/")
+    rows = json.loads(re.search(r"\((\[.*\])\)", text, re.S).group(1))
+    return [(dt.date.fromisoformat(r["date"]), float(r["close"]) * factor) for r in rows[-400:]]
 
 
 def before(history, day):
@@ -96,8 +116,14 @@ def fetch_all():
     for key, sym in YAHOO.items():
         try:
             found[key] = changes(yahoo(sym))
+            continue
         except Exception as e:  # noqa: BLE001
-            print(f"{key}: could not fetch from Yahoo Finance ({e})")
+            print(f"{key}: could not fetch from Yahoo Finance ({e}) — trying Sina Finance")
+        try:
+            found[key] = changes(sina_global(*SINA_GLOBAL[key]))
+            print(f"{key}: using Sina Finance")
+        except Exception as e:  # noqa: BLE001
+            print(f"{key}: could not fetch from Sina Finance either ({e})")
     for key, sym in SINA.items():
         try:
             found[key] = changes(sina(sym))
