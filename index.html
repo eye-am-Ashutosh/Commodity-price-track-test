@@ -426,7 +426,7 @@ table.xb{border-collapse:collapse;width:100%;min-width:600px;font-size:13px}
   </section>
 
   <div class="toast" id="toast" role="status" hidden></div>
-  <footer class="foot">Cells and 5MWh ESS: SMM weekly pricing, entered by hand or imported (USD / kWh) · Lithium, copper, crude oil: updated automatically from Trading Economics (marked TE) · ✎ = value entered by you.</footer>
+  <footer class="foot">Cells and 5MWh ESS: SMM weekly pricing, entered by hand or imported (USD / kWh) · Lithium, copper, crude oil: updated automatically every weekday from Yahoo Finance (copper, crude) and Sina Finance / GFEX (lithium carbonate), marked auto · ✎ = value entered by you.</footer>
 </div>
 
 <script id="seed" type="application/json">{}</script>
@@ -457,7 +457,7 @@ function rebuildOrder(){
 const ICON = { expand:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>',
                shrink:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2.5V6H2.5M13.5 6H10V2.5M10 13.5V10h3.5M2.5 10H6v3.5"/></svg>' };
 const RANGES = [['1W',7],['1M','1m'],['3M','3m'],['6M','6m'],['YTD','ytd'],['1Y','1y'],['5Y','5y'],['All','all']];
-const SRC_LABEL = {x:'your sheet',d:'derived',t:'TE',m:'manual'};
+const SRC_LABEL = {x:'your sheet',d:'derived',t:'auto',m:'manual'};
 
 const ms = s => { const [y,m,d] = s.split('-').map(Number); return Date.UTC(y,m-1,d); };
 const iso = t => new Date(t).toISOString().slice(0,10);
@@ -511,7 +511,7 @@ function changes(arr,i){
 }
 function formula(key,r,c,m){
   const lab = m==='fytd' ? fyLabel() : PCT_LABEL[m];
-  if (c.manual) return c.by ? `${lab}: ${fmtPct(c.v)} as published by ${c.by==='TE'?'Trading Economics':c.by}` : `${lab}: ${fmtPct(c.v)} entered manually (overrides the calculation)`;
+  if (c.manual) return c.by ? `${lab}: ${fmtPct(c.v)} as published by ${c.by==='TE'?'the daily price feed':c.by}` : `${lab}: ${fmtPct(c.v)} entered manually (overrides the calculation)`;
   if (c.v==null) return `${lab}: no close available for the reference date`;
   return `${lab}: (${fmtP(key,r.p)} − ${fmtP(key,c.ref.p)}) ÷ ${fmtP(key,c.ref.p)} = ${fmtPct(c.v)} · vs ${fmtDate(c.ref.t)} close — ${c.rule}`;
 }
